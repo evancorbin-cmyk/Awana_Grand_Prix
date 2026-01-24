@@ -1,0 +1,93 @@
+category,heat_number,car_number,name,lane
+Cubbies,1,101,Donald Duck,1
+Cubbies,1,102,Donald Trump,2
+Cubbies,1,103,Mickey Mouse,3
+Cubbies,1,104,Mickey Rourke,4
+Cubbies,2,102,Donald Trump,1
+Cubbies,2,103,Mickey Mouse,2
+Cubbies,2,104,Mickey Rourke,3
+Cubbies,2,105,Daisy Duck,4
+Cubbies,3,103,Mickey Mouse,1
+Cubbies,3,104,Mickey Rourke,2
+Cubbies,3,105,Daisy Duck,3
+Cubbies,3,101,Donald Duck,4
+Cubbies,4,104,Mickey Rourke,1
+Cubbies,4,105,Daisy Duck,2
+Cubbies,4,101,Donald Duck,3
+Cubbies,4,102,Donald Trump,4
+Cubbies,5,105,Daisy Duck,1
+Cubbies,5,101,Donald Duck,2
+Cubbies,5,102,Donald Trump,3
+Cubbies,5,103,Mickey Mouse,4
+Sparks,6,201,Minnie Mouse,1
+Sparks,6,202,Minnie Driver,2
+Sparks,6,203,Lance Amrstrong,3
+Sparks,6,204,Neil Armstrong,4
+Sparks,7,202,Minnie Driver,1
+Sparks,7,203,Lance Amrstrong,2
+Sparks,7,204,Neil Armstrong,3
+Sparks,7,205,Goofy,4
+Sparks,8,203,Lance Amrstrong,1
+Sparks,8,204,Neil Armstrong,2
+Sparks,8,205,Goofy,3
+Sparks,8,201,Minnie Mouse,4
+Sparks,9,204,Neil Armstrong,1
+Sparks,9,205,Goofy,2
+Sparks,9,201,Minnie Mouse,3
+Sparks,9,202,Minnie Driver,4
+Sparks,10,205,Goofy,1
+Sparks,10,201,Minnie Mouse,2
+Sparks,10,202,Minnie Driver,3
+Sparks,10,203,Lance Amrstrong,4
+T&T,11,301,Buzz Aldren,1
+T&T,11,302,Buzz Lightyear,2
+T&T,11,303,Michael Collins,3
+T&T,11,304,Phil Collins,4
+T&T,12,302,Buzz Lightyear,1
+T&T,12,303,Michael Collins,2
+T&T,12,304,Phil Collins,3
+T&T,12,305,Woody,4
+T&T,13,303,Michael Collins,1
+T&T,13,304,Phil Collins,2
+T&T,13,305,Woody,3
+T&T,13,306,Buzz McCoy,4
+T&T,14,304,Phil Collins,1
+T&T,14,305,Woody,2
+T&T,14,306,Buzz McCoy,3
+T&T,14,307,Buzz Sawyer,4
+T&T,15,305,Woody,1
+T&T,15,306,Buzz McCoy,2
+T&T,15,307,Buzz Sawyer,3
+T&T,15,301,Buzz Aldren,4
+T&T,16,306,Buzz McCoy,1
+T&T,16,307,Buzz Sawyer,2
+T&T,16,301,Buzz Aldren,3
+T&T,16,302,Buzz Lightyear,4
+T&T,17,307,Buzz Sawyer,1
+T&T,17,301,Buzz Aldren,2
+T&T,17,302,Buzz Lightyear,3
+T&T,17,303,Michael Collins,4
+Trek,18,401,Evan Corbin,1
+Trek,18,402,Katie Corbin,2
+Trek,18,403,Abigail Corbin,3
+Trek,18,404,Hannah Corbin,4
+Trek,19,402,Katie Corbin,1
+Trek,19,403,Abigail Corbin,2
+Trek,19,404,Hannah Corbin,3
+Trek,19,405,Michael Corbin,4
+Trek,20,403,Abigail Corbin,1
+Trek,20,404,Hannah Corbin,2
+Trek,20,405,Michael Corbin,3
+Trek,20,406,Sarah Corbin,4
+Trek,21,404,Hannah Corbin,1
+Trek,21,405,Michael Corbin,2
+Trek,21,406,Sarah Corbin,3
+Trek,21,401,Evan Corbin,4
+Trek,22,405,Michael Corbin,1
+Trek,22,406,Sarah Corbin,2
+Trek,22,401,Evan Corbin,3
+Trek,22,402,Katie Corbin,4
+Trek,23,406,Sarah Corbin,1
+Trek,23,401,Evan Corbin,2
+Trek,23,402,Katie Corbin,3
+Trek,23,403,Abigail Corbin,4

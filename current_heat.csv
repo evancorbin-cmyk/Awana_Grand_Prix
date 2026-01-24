@@ -1,0 +1,5 @@
+Place,car_number,name,lane,time_ms,category,heat_number
+1,307,Buzz Sawyer,1,1180,T&T,17
+2,301,Buzz Aldren,2,1349,T&T,17
+3,302,Buzz Lightyear,3,1520,T&T,17
+4,303,Michael Collins,4,1655,T&T,17
