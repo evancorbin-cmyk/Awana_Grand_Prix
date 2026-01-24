@@ -32,7 +32,7 @@ HEATS_FILE = "heats.csv"
 CSV_RESULTS_FILE = "heats_results.csv"
 
 # Sounds to keep
-RACERESET_SOUND = "GetReady.mp3"
+RACERESET_SOUND = "RaceReset.mp3"
 RACEFINISHED_SOUND = "RaceFinished.mp3"
 MENU_SOUND = "Menu.mp3"
 RACESTARTED_SOUND = "RaceStarted.mp3"
@@ -253,6 +253,85 @@ def write_leaderboard_csv(category):
 
 
 ###############################################################
+# WRITE LAST COMPLETED HEAT TO current_heat.csv
+###############################################################
+def write_last_heat_to_current(last_heat_number):
+    """
+    Reads heats_results.csv and writes the results of the last heat
+    to current_heat.csv for display.
+    """
+    last_heat_data = []
+
+    try:
+        with open(CSV_RESULTS_FILE, newline="") as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                if int(row["heat_number"]) == last_heat_number:
+                    last_heat_data.append(row)
+    except FileNotFoundError:
+        return
+
+    if not last_heat_data:
+        return
+
+    # Sort by time
+    last_heat_data.sort(key=lambda x: int(x["time_ms"]))
+
+    with open("current_heat.csv", "w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow([
+            "Place", "car_number", "name", "lane",
+            "time_ms", "category", "heat_number"
+        ])
+
+        for idx, row in enumerate(last_heat_data, start=1):
+            writer.writerow([
+                idx,
+                row["car_number"],
+                row["name"],
+                row["lane"],
+                row["time_ms"],
+                row["category"],
+                row["heat_number"]
+            ])
+
+    print(f"Updated current_heat.csv with results from Heat {last_heat_number}")
+
+
+###############################################################
+# GENERATE FINAL TOP 3 LEADERS ACROSS ALL CATEGORIES
+###############################################################
+def generate_final_leaders_csv(categories):
+    """
+    Creates a final CSV file with top 3 leaders in each category.
+    File is saved as 'final_leaders.csv'
+    """
+    try:
+        with open("final_leaders.csv", "w", newline="") as f:
+            writer = csv.writer(f)
+            writer.writerow(["Place", "Category", "Car Number", "Name", "Average Time (ms)"])
+
+            # Define category order
+            category_order = ["Cubbies", "Sparks", "T&T", "Trek", "Journey", "GroupB"]
+            
+            for category in category_order:
+                if category in categories:
+                    leaders = compute_leaderboard(category)
+                    for place, (car, name, avg) in enumerate(leaders, start=1):
+                        writer.writerow([
+                            place,
+                            category,
+                            car,
+                            name,
+                            str(round(avg))
+                        ])
+
+        print(f"Final leaders saved to final_leaders.csv")
+    except Exception as e:
+        print(f"Error generating final leaders: {e}")
+
+
+###############################################################
 # WRITE NEXT HEAT TO upnext.csv
 ###############################################################
 def write_upnext_csv(categories, current_category, current_heat):
@@ -321,10 +400,20 @@ def monitor_serial(port, baud, timeout=0.1):
         all_heats.sort(key=lambda x: x[1])
         remaining_heats = [(cat, h) for (cat, h) in all_heats if h > last_heat]
 
+#What to do when all heats are done
         if not remaining_heats:
-            print("All heats completed — restarting system.")
-            time.sleep(2)
-            continue  # Loop forever
+            print("All heats completed — generating final leaders report.")
+            # Write last heat results to current_heat.csv
+            write_last_heat_to_current(last_heat)
+            # Update leaderboards for all categories
+            for category in sorted(categories.keys()):
+                write_leaderboard_csv(category)
+            generate_final_leaders_csv(categories)
+            print("All heats are done!")
+            pygame.mixer.music.load(MENU_SOUND)
+            pygame.mixer.music.play(loops=-1, fade_ms=2000)
+            while True:
+                time.sleep(1)
 
         # Process heats
         for current_category, current_heat in remaining_heats:

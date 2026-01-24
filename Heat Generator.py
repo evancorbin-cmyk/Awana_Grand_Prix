@@ -62,28 +62,6 @@ def write_heats_to_csv(all_heats):
                         entry["lane"]
                     ])
                 heat_counter += 1
-import json
-
-def write_heats_to_json(all_heats, filename="heats.json"):
-    data = {"categories": []}
-
-    heat_counter = 1
-
-    for category, heats in all_heats.items():
-        cat_entry = {"name": category, "heats": []}
-
-        for heat in heats:
-            heat_entry = {
-                "heat_number": heat_counter,
-                "racers": heat
-            }
-            cat_entry["heats"].append(heat_entry)
-            heat_counter += 1
-
-        data["categories"].append(cat_entry)
-
-    with open(filename, "w") as f:
-        json.dump(data, f, indent=4)
 
 
 def main():
@@ -96,7 +74,6 @@ def main():
         all_heats[category] = heats
 
     write_heats_to_csv(all_heats)
-    write_heats_to_json(all_heats, "heats.json")
 
     print(f"Heat schedule written to {OUTPUT_FILE}")
 

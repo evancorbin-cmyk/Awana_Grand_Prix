@@ -4,7 +4,7 @@ import subprocess
 import csv
 from PyQt5.QtWidgets import (
     QApplication, QWidget, QPushButton, QVBoxLayout, QHBoxLayout,
-    QLabel, QTableWidget, QTableWidgetItem, QHeaderView
+    QLabel, QTableWidget, QTableWidgetItem, QHeaderView, QDialog, QScrollArea
 )
 from PyQt5.QtGui import QPixmap, QPalette, QBrush, QMovie
 from PyQt5.QtCore import Qt, QTimer, QPropertyAnimation, QPoint, pyqtSignal, QUrl
@@ -20,6 +20,188 @@ def load_csv(filename):
             return list(reader)
     except FileNotFoundError:
         return []
+
+###############################################################
+# FINAL RESULTS DIALOG
+###############################################################
+class FinalResultsDialog(QDialog):
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("Final Results")
+        self.setGeometry(100, 100, 1600, 900)
+        self.showMaximized()
+
+        # Background
+        palette = QPalette()
+        palette.setBrush(QPalette.Window, QBrush(QPixmap("checker_bg.png")))
+        self.setPalette(palette)
+        self.setAutoFillBackground(True)
+
+        # Main layout
+        main_layout = QVBoxLayout()
+        
+        # Title
+        title_label = QLabel("<b>Final Leaders</b>")
+        title_label.setStyleSheet("font-size: 32px; color: yellow; font-family: 'Comic Sans MS'; font-weight: bold; background-color: black; padding: 10px;")
+        main_layout.addWidget(title_label, alignment=Qt.AlignHCenter)
+
+        # Scroll area for categories
+        scroll_area = QScrollArea()
+        scroll_area.setWidgetResizable(True)
+        scroll_widget = QWidget()
+        scroll_layout = QVBoxLayout()
+
+        # Load final_leaders.csv and group by category
+        final_data = load_csv("final_leaders.csv")
+        
+        if not final_data or len(final_data) < 2:
+            error_label = QLabel("No final results available")
+            error_label.setStyleSheet("font-size: 20px; color: red; font-family: 'Comic Sans MS';")
+            scroll_layout.addWidget(error_label)
+        else:
+            # Parse headers and data
+            headers = final_data[0]
+            rows = final_data[1:]
+
+            # Group by category (preserving order)
+            categories_dict = {}
+            category_order = []
+            cat_index = headers.index("Category") if "Category" in headers else 1
+            
+            for row in rows:
+                category = row[cat_index]
+                if category not in categories_dict:
+                    categories_dict[category] = []
+                    category_order.append(category)
+                categories_dict[category].append(row)
+
+            # Create table for each category
+            category_gifs = {
+                "Cubbies": "Cubbies_horizontal_waving.gif",
+                "Sparks": "Sparks_horizontal_waving.gif",
+                "T&T": "TT_horizontal_waving.gif",
+                "Journey": "Journey_horizontal_waving.gif",
+                "Trek": "Trek_horizontal_waving.gif",
+                "GroupB": "group_b_epic_race.gif"
+            }
+
+            for category in category_order:
+                cat_rows = categories_dict[category]
+
+                # Category container with horizontal layout
+                cat_layout = QHBoxLayout()
+
+                # Create table
+                table = QTableWidget()
+                table.setFixedWidth(900)
+                table.setFixedHeight(250)
+                table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+                table.verticalHeader().setVisible(False)
+                table.horizontalHeader().setDefaultAlignment(Qt.AlignHCenter | Qt.AlignVCenter)
+                table.setStyleSheet("""
+                    QTableWidget {
+                        background-color: black !important;
+                        color: yellow;
+                        font-size: 20px;
+                        font-family: 'Comic Sans MS';
+                        font-weight: bold;
+                    }
+                    QHeaderView::section {
+                        background-color: black !important;
+                        color: yellow;
+                        font-size: 18px;
+                        font-family: 'Comic Sans MS';
+                        font-weight: bold;
+                        padding: 4px;
+                        qproperty-alignment: AlignHCenter;
+                    }
+                """)
+
+                # Populate table
+                pretty_headers = [h if h in ["Place", "Car #"] else h.replace("_", " ").title().replace("Ms)", "ms)") for h in headers]
+                table.setColumnCount(len(headers))
+                table.setHorizontalHeaderLabels(pretty_headers)
+                table.setRowCount(len(cat_rows))
+
+                for r, row in enumerate(cat_rows):
+                    for c, value in enumerate(row):
+                        item = QTableWidgetItem(value)
+                        item.setTextAlignment(Qt.AlignHCenter | Qt.AlignVCenter)
+                        table.setItem(r, c, item)
+
+                cat_layout.addWidget(table)
+
+                # Add GIF if available
+                if category in category_gifs:
+                    gif_label = QLabel()
+                    gif_label.setAlignment(Qt.AlignCenter)
+                    
+                    # Create movie and get its dimensions
+                    movie = QMovie(category_gifs[category])
+                    movie.setCacheMode(QMovie.CacheAll)
+                    movie.setSpeed(100)
+                    
+                    # Get the frame size from the movie
+                    if movie.frameCount() > 0:
+                        frame_size = movie.frameRect().size()
+                        if frame_size.height() > 0:
+                            # Scale to height of 250 while maintaining aspect ratio
+                            scale_factor = 250 / frame_size.height()
+                            scaled_width = int(frame_size.width() * scale_factor)
+                            gif_label.setFixedWidth(scaled_width)
+                            gif_label.setFixedHeight(250)
+                    
+                    gif_label.setMovie(movie)
+                    movie.start()
+                    cat_layout.addWidget(gif_label)
+
+                # Add category section to scroll layout
+                cat_container = QWidget()
+                cat_container.setLayout(cat_layout)
+                scroll_layout.addWidget(cat_container)
+
+            scroll_layout.addStretch()
+
+        scroll_widget.setLayout(scroll_layout)
+        scroll_area.setWidget(scroll_widget)
+        main_layout.addWidget(scroll_area)
+
+        # Close button
+        close_btn = QPushButton("Close")
+        close_btn.setFixedSize(120, 40)
+        close_btn.clicked.connect(self.close)
+        close_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #222;
+                color: yellow;
+                font-size: 18px;
+                font-family: 'Comic Sans MS';
+                font-weight: bold;
+                border: 2px solid yellow;
+                padding: 6px;
+            }
+            QPushButton:hover {
+                background-color: #444;
+            }
+        """)
+        
+        button_layout = QHBoxLayout()
+        button_layout.addStretch()
+        button_layout.addWidget(close_btn)
+        main_layout.addLayout(button_layout)
+
+        self.setLayout(main_layout)
+
+    def resizeEvent(self, event):
+        bg = QPixmap("checker_bg.png")
+        scaled = bg.scaled(self.size(), Qt.IgnoreAspectRatio, Qt.SmoothTransformation)
+
+        palette = self.palette()
+        palette.setBrush(QPalette.Window, QBrush(scaled))
+        self.setPalette(palette)
+
+        super().resizeEvent(event)
+
 
 ###############################################################
 # Reusable Table Panel With Background + Styling + Animation
@@ -73,7 +255,8 @@ class DataPanel(QWidget):
 
         layout.addWidget(self.table, alignment=Qt.AlignHCenter)
         self.setLayout(layout)
-        self.setFixedHeight(fixed_height)
+        self.setMaximumHeight(fixed_height)
+        self.setMinimumHeight(200)
 
         # Animation timer
         self.animation_timer = QTimer()
@@ -202,7 +385,6 @@ class MainDashboard(QWidget):
         self.run_timing_program()
         # Main background PNG
         palette = QPalette()
-        #palette.setBrush(QPalette.Window, QBrush(QPixmap("checker_bg.png")))
         self.setPalette(palette)
         self.setAutoFillBackground(True)
 
@@ -289,10 +471,27 @@ class MainDashboard(QWidget):
         #btn_run.setFixedSize(180, 40)
         #btn_run.clicked.connect(self.run_timing_program)
 
+        btn_results = QPushButton("Show Final Results")
+        btn_results.setFixedSize(180, 40)
+        btn_results.clicked.connect(self.show_final_results)
+        btn_results.setStyleSheet("""
+            QPushButton {
+                background-color: #222;
+                color: yellow;
+                font-size: 16px;
+                font-family: 'Comic Sans MS';
+                font-weight: bold;
+                border: 2px solid yellow;
+                padding: 6px;
+            }
+            QPushButton:hover {
+                background-color: #444;
+            }
+        """)
+
         btn_exit = QPushButton("Exit")
         btn_exit.setFixedSize(120, 40)
-        btn_exit.clicked.connect(self.closeEvent)
-        btn_exit.clicked.connect(self.close)
+        btn_exit.clicked.connect(self.on_exit_button_clicked)
         btn_exit.setStyleSheet("""
             QPushButton {
                 background-color: #222;
@@ -310,6 +509,7 @@ class MainDashboard(QWidget):
 
 
         #buttons_layout.addWidget(btn_run)
+        buttons_layout.addWidget(btn_results)
         buttons_layout.addWidget(btn_exit)
         buttons_layout.setAlignment(Qt.AlignRight)
         buttons_layout.setAlignment(Qt.AlignBottom)
@@ -515,6 +715,14 @@ class MainDashboard(QWidget):
     def set_looping_gif(self, label: QLabel, gif_path: str, which="current"):
         label.clear()
         label.setPixmap(QPixmap())  # Clear existing pixmap/movie
+        label.setScaledContents(True)
+        
+        # Scale GroupB GIF to fit table dimensions
+        if "group_b" in gif_path.lower():
+            original = QPixmap(gif_path)
+            scaled_width = int(original.width() * (200 / original.height()))
+            label.setFixedWidth(scaled_width)
+            label.setFixedHeight(200)
         
         movie = QMovie(gif_path)
         movie.setCacheMode(QMovie.CacheAll)
@@ -535,11 +743,16 @@ class MainDashboard(QWidget):
     ###########################################################
     def refresh_panels(self):
         heat_data = load_csv("current_heat.csv")
+        upnext_data = load_csv("upnext.csv")
 
         if not heat_data or len(heat_data) < 2:
             self.heat_panel.update_from_csv("current_heat.csv", animate=False)
             self.leader_panel.update_from_csv("current_leaderboard.csv", animate=False)
-            self.upnext_panel.update_from_csv("upnext.csv", animate=False)
+            if upnext_data and len(upnext_data) > 1:
+                self.upnext_panel.update_from_csv("upnext.csv", animate=False)
+            else:
+                self.upnext_panel.table.setRowCount(0)
+                self.upnext_panel.table.setColumnCount(0)
             return
 
         headers = heat_data[0]
@@ -557,7 +770,11 @@ class MainDashboard(QWidget):
             # Start animation chain
             self.heat_panel.update_from_csv("current_heat.csv", animate=True)
             self.leader_panel.update_from_csv("current_leaderboard.csv", animate=True)
-            self.upnext_panel.update_from_csv("upnext.csv", animate=True)
+            if upnext_data and len(upnext_data) > 1:
+                self.upnext_panel.update_from_csv("upnext.csv", animate=True)
+            else:
+                self.upnext_panel.table.setRowCount(0)
+                self.upnext_panel.table.setColumnCount(0)
             last_cat, next_cat = self.get_last_and_next_categories()
             #NEED TO TEST THIS PART STILL
             #current_category = self.heat_panel.current_category  # however you store it
@@ -586,13 +803,28 @@ class MainDashboard(QWidget):
         #    self.upnext_panel.update_from_csv("upnext.csv", animate=False)
 
     ###########################################################
+    # Show final results window
+    ###########################################################
+    def show_final_results(self):
+        dialog = FinalResultsDialog()
+        dialog.exec_()
+
+    ###########################################################
+    # Exit button handler
+    ###########################################################
+    def on_exit_button_clicked(self):
+        if self.engine_process is not None:
+            self.engine_process.terminate()
+            self.engine_process = None
+        self.close()
+
+    ###########################################################
     # Kill race engine on exit
     ###########################################################
     def closeEvent(self, event):
         if self.engine_process is not None:
             self.engine_process.terminate()
             self.engine_process = None
-            self.close()
         event.accept()
 
 ###############################################################
