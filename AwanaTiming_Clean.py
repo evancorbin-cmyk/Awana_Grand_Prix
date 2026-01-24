@@ -56,7 +56,7 @@ def initialize_race_state(categories):
         writer = csv.writer(f)
         writer.writerow([
             "Place", "category", "car_number",
-            "name", "Average Time (ms)"
+            "name", " ", "Average Time (ms)","  "
         ])
 
     # Determine completed heats
@@ -239,7 +239,7 @@ def write_leaderboard_csv(category):
 
         writer.writerow([
             "Place", "car_number", "name",
-            "avg_time_ms", "category"
+            " ", "avg_time_ms", "category", "  "
         ])
 
         for idx, (car, name, avg) in enumerate(leaders, start=1):
@@ -247,6 +247,7 @@ def write_leaderboard_csv(category):
                 idx,
                 car,
                 name,
+                "",
                 str(round(avg)),
                 category
             ])

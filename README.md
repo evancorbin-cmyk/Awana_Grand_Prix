@@ -49,14 +49,14 @@ The Awana Grand Prix Race Control System is designed to manage multiple racing c
 
 1. **Create/Update Racer List** - Create or edit a file named exactly `Racer List.csv`:
    - **IMPORTANT**: File name MUST be exactly `Racer List.csv` (with space and capital letters) or the program won't find it
-   - Columns: `Category`, `Car_Number`, `Name`
+   - Columns: `Car_Number`, `Name`, `Category` (in this order)
    - One racer per row
    - Example:
      ```
-     Category,Car_Number,Name
-     Cubbies,101,Donald Duck
-     Cubbies,102,Donald Trump
-     Sparks,201,Mickey Mouse
+     Car_Number,Name,Category
+     101,Donald Duck,Cubbies
+     102,Donald Trump,Cubbies
+     201,Mickey Mouse,Sparks
      ```
    - Save the file
 

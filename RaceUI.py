@@ -400,7 +400,7 @@ class MainDashboard(QWidget):
         top_row = QHBoxLayout()
 
         # Three stacked panels
-        self.heat_panel = DataPanel("-----Last Heat Results------", "heat_bg.png")
+        self.heat_panel = DataPanel("----- Heat Results------", "heat_bg.png")
         self.setStyleSheet("background-color: black;")
 
         self.leader_panel = DataPanel("-----Current Leaderboard------", "leaderboard_bg.png")
@@ -478,7 +478,7 @@ class MainDashboard(QWidget):
             QPushButton {
                 background-color: #222;
                 color: yellow;
-                font-size: 16px;
+                font-size: 18px;
                 font-family: 'Comic Sans MS';
                 font-weight: bold;
                 border: 2px solid yellow;
@@ -496,7 +496,7 @@ class MainDashboard(QWidget):
             QPushButton {
                 background-color: #222;
                 color: yellow;
-                font-size: 20px;
+                font-size: 18px;
                 font-family: 'Comic Sans MS';
                 font-weight: bold;
                 border: 2px solid yellow;
