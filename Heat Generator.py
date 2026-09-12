@@ -1,8 +1,22 @@
+"""Generate the heat schedule for the Awana Grand Prix event.
+
+This utility reads the master racer list, groups racers by category, sorts each
+category by car number, and builds a rotating round-robin heat schedule. The goal
+is to ensure that each racer appears in a different lane across successive heats so
+that the race remains fair and evenly distributed.
+"""
+
 import csv
 from collections import defaultdict
 
+###############################################################
+# SCHEDULE GENERATION SETTINGS
+# These values control where the source data is loaded from and where the output
+# heat sheet is written.
+###############################################################
 INPUT_FILE = "Racer List.csv"
 OUTPUT_FILE = "heats.csv"
+LANES_PER_HEAT = 4
 
 
 def load_racers(filename):

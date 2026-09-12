@@ -12,9 +12,27 @@
 #   • Loops forever when all heats are done
 ###############################################################
 
+"""Awana Grand Prix timing engine.
+
+This script is the race-control backend for the event. It reads the heat schedule,
+waits for serial messages from the Arduino timing gate, validates and stores lane
+results, updates live CSV files for the dashboard, and advances through each heat
+until all heats have been completed.
+
+The overall workflow is:
+1. Load the scheduled heats from heats.csv.
+2. Initialize the current race-state CSV files.
+3. Open the serial connection to the Arduino timing gate.
+4. Wait for the "Race Started" signal for the next heat.
+5. Record each lane's finish time as the Arduino reports it.
+6. Save the finished heat results and refresh the leaderboard/up-next files.
+7. Continue until every heat is complete, then generate the final report.
+"""
+
 import csv
 import os
 import serial
+from serial.tools import list_ports
 import time
 import sys
 from collections import defaultdict
@@ -23,15 +41,24 @@ import pygame
 pygame.mixer.init()
 
 ###############################################################
-# USER SETTINGS
+# CONFIGURATION / SETTINGS
+# These values are read once at startup and control how the race engine
+# connects to hardware, which files it uses, and which sounds it plays.
 ###############################################################
-COMM_PORT = "COM4"
-BAUD_RATE = 9600
+# Serial settings: the Arduino should be connected to this COM port at this baud rate.
+COMM_PORT = os.getenv("AWANA_COM_PORT", "COM4")
+BAUD_RATE = int(os.getenv("AWANA_BAUD_RATE", "9600"))
 
+# CSV file names used by the race engine to track the schedule, current results,
+# completed heats, and the next race that should run.
 HEATS_FILE = "heats.csv"
 CSV_RESULTS_FILE = "heats_results.csv"
+CURRENT_HEAT_FILE = "current_heat.csv"
+CURRENT_LEADERBOARD_FILE = "current_leaderboard.csv"
+UPNEXT_FILE = "upnext.csv"
+FINAL_LEADERS_FILE = "final_leaders.csv"
 
-# Sounds to keep
+# Sound files used for race-state notifications to keep the event audio cues clear.
 RACERESET_SOUND = "RaceReset.mp3"
 RACEFINISHED_SOUND = "RaceFinished.mp3"
 MENU_SOUND = "Menu.mp3"
@@ -333,6 +360,47 @@ def generate_final_leaders_csv(categories):
 
 
 ###############################################################
+# SIMULATE A COMPLETED HEAT FOR UI TESTING / DEMO MODE
+###############################################################
+def simulate_heat_finish():
+    """Replays the most recent completed heat in the UI without creating a new race result."""
+    if not os.path.exists(CSV_RESULTS_FILE):
+        print("No heats_results.csv found; nothing to replay.")
+        return
+
+    with open(CSV_RESULTS_FILE, newline="") as f:
+        reader = csv.DictReader(f)
+        rows = list(reader)
+
+    if not rows:
+        print("No completed heat rows to replay.")
+        return
+
+    last_heat = max(int(row["heat_number"]) for row in rows)
+    last_rows = [row for row in rows if int(row["heat_number"]) == last_heat]
+    if not last_rows:
+        return
+
+    current_category = last_rows[0]["category"]
+    saved_heat = {}
+    for row in last_rows:
+        lane_number = int(row["lane"])
+        saved_heat[lane_number] = {
+            "category": row["category"],
+            "heat_number": int(row["heat_number"]),
+            "car_number": row["car_number"],
+            "name": row["name"],
+            "lane": lane_number,
+            "time_ms": int(row["time_ms"]),
+        }
+
+    write_current_heat_csv(saved_heat)
+    write_leaderboard_csv(current_category)
+
+    print(f"Replayed completed heat {last_heat} ({current_category}) for UI animation.")
+
+
+###############################################################
 # WRITE NEXT HEAT TO upnext.csv
 ###############################################################
 def write_upnext_csv(categories, current_category, current_heat):
@@ -376,9 +444,42 @@ def write_upnext_csv(categories, current_category, current_heat):
 ###############################################################
 # MAIN SERIAL MONITORING LOOP
 ###############################################################
+def open_serial_connection(preferred_port, baud, timeout=0.1):
+    """
+    Opens a serial connection, trying the preferred port first and then
+    falling back to the first available port when possible.
+    """
+    available_ports = [p.device for p in list_ports.comports()]
+
+    try:
+        return serial.Serial(preferred_port, baud, timeout=timeout)
+    except serial.SerialException as exc:
+        print(f"WARNING: Could not open preferred port {preferred_port}: {exc}")
+
+    if not available_ports:
+        raise RuntimeError(
+            "No serial ports were detected. Check USB cable/driver and Arduino power."
+        )
+
+    for candidate in available_ports:
+        if candidate == preferred_port:
+            continue
+        try:
+            print(f"Trying fallback serial port: {candidate}")
+            return serial.Serial(candidate, baud, timeout=timeout)
+        except serial.SerialException:
+            continue
+
+    raise RuntimeError(
+        "Unable to open any serial port. Available ports: "
+        + ", ".join(available_ports)
+        + ". Close other apps using the port (Arduino IDE Serial Monitor, etc.)."
+    )
+
+
 def monitor_serial(port, baud, timeout=0.1):
-    ser = serial.Serial(port, baud, timeout=timeout)
-    print(f"Listening on {port} at {baud} baud...")
+    ser = open_serial_connection(port, baud, timeout=timeout)
+    print(f"Listening on {ser.port} at {baud} baud...")
 
     pygame.mixer.music.load(MENU_SOUND)
     pygame.mixer.music.play(loops=-1, fade_ms=2000)

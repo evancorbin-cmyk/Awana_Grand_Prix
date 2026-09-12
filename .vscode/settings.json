@@ -1,0 +1,41 @@
+{
+    "python.analysis.typeCheckingMode": "off",
+    "python.analysis.diagnosticMode": "openFilesOnly",
+    "python.analysis.diagnosticSeverityOverrides": {
+        "reportUndefinedVariable": "error",
+        "reportMissingImports": "error",
+        "reportGeneralTypeIssues": "none",
+        "reportOptionalMemberAccess": "none",
+        "reportOptionalSubscript": "none",
+        "reportOptionalCall": "none",
+        "reportOptionalIterable": "none",
+        "reportOptionalContextManager": "none",
+        "reportOptionalOperand": "none",
+        "reportAttributeAccessIssue": "none",
+        "reportArgumentType": "none",
+        "reportAssignmentType": "none",
+        "reportReturnType": "none",
+        "reportOperatorIssue": "none",
+        "reportIndexIssue": "none",
+        "reportCallIssue": "none",
+        "reportUnusedImport": "none",
+        "reportUnusedVariable": "none",
+        "reportUnusedFunction": "none",
+        "reportUnusedClass": "none",
+        "reportUnknownParameterType": "none",
+        "reportUnknownArgumentType": "none",
+        "reportUnknownVariableType": "none",
+        "reportUnknownMemberType": "none",
+        "reportUnknownLambdaType": "none",
+        "reportUnknownReturnType": "none",
+        "reportMissingTypeStubs": "none",
+        "reportMissingModuleSource": "none"
+    },
+    "python-envs.pythonProjects": [
+        {
+            "path": ".",
+            "envManager": "ms-python.python:venv",
+            "packageManager": "ms-python.python:pip"
+        }
+    ]
+}

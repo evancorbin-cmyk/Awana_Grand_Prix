@@ -1,4 +1,13 @@
+"""Qt dashboard for monitoring Awana Grand Prix results in real time.
+
+This file builds the display used at race time. It reads the live CSV files created
+by the timing engine and renders the heat results, leaderboard, and next heat in a
+full-screen dashboard. The UI also starts the timing engine in the background and
+shows a final results dialog when the event is complete.
+"""
+#Select .venv311(3.11.9) for Python environment
 from ast import If
+import os
 import sys
 import subprocess
 import csv
@@ -11,6 +20,93 @@ from PyQt5.QtCore import Qt, QTimer, QPropertyAnimation, QPoint, pyqtSignal, QUr
 from PyQt5.QtMultimedia import QSoundEffect
 
 ###############################################################
+# GLOBAL UI SETTINGS
+# These values define dashboard sizing, fonts, layout spacing, and table widths.
+# They are centralized here so the dashboard can be tuned without hunting through
+# multiple widgets and classes.
+###############################################################
+DEFAULT_COLUMN_WIDTH = 180
+TABLE_COLUMN_WIDTHS = {
+    "heat_results": {
+        "Place": 110,
+        "Category": 210,
+        "heat_number": 180,
+        "car_number": 170,
+        "name": 360,
+        "lane": 150,
+        "time": 190,
+    },
+    "leaderboard": {
+        "Place": 110,
+        "Category": 210,
+        "car_number": 170,
+        "name": 360,
+        "Avg Time": 190,
+        "avg_time": 190,
+    },
+    "up_next": {
+        "car_number": 200,
+        "name": 360,
+        "lane": 230,
+        "category": 350,
+        "heat_number": 180,
+    },
+    "final_results": {
+        "Place": 110,
+        "Category": 210,
+        "heat_number": 130,
+        "car_number": 300,
+        "name": 360,
+        "lane": 110,
+        "time": 220,
+        "time_ms": 220,
+        "avg_time": 350,
+        "Average Time (ms)": 350,
+        "Average Time": 350,
+    },
+}
+
+TABLE_DIMENSIONS = {
+    "heat_results": {
+        "table_width": 1600,
+        "table_height": 300,
+        "panel_height": 370,
+        "row_height": 45,
+    },
+    "leaderboard": {
+        "table_width": 1600,
+        "table_height": 250,
+        "panel_height": 320,
+        "row_height": 45,
+    },
+    "up_next": {
+        "table_width": 1600,
+        "table_height": 300,
+        "panel_height": 370,
+        "row_height": 45,
+    },
+    "final_results": {
+        "dialog_width": 1500,
+        "dialog_height": 900,
+        "table_width": 1400,
+        "table_height": 270,
+        "row_height": 64,
+    },
+}
+
+TEXT_SIZES = {
+    "panel_title": 44,
+    "panel_table": 30,
+    "panel_header": 36,
+    "animated_row": 33,
+    "final_title": 64,
+    "final_table": 33,
+    "final_header": 36,
+    "error_label": 36,
+    "button": 18,
+}
+
+###############################################################
 # Utility: Load CSV into a list of rows
 ###############################################################
 def load_csv(filename):
@@ -21,14 +117,91 @@ def load_csv(filename):
     except FileNotFoundError:
         return []
 
+
+def build_table_stylesheet(cell_font_size, header_font_size):
+    return f"""
+        QTableWidget {{
+            background-color: black !important;
+            color: yellow;
+            font-size: {cell_font_size}px;
+            font-family: 'Comic Sans MS';
+            font-weight: bold;
+        }}
+        QHeaderView::section {{
+            background-color: black !important;
+            color: yellow;
+            font-size: {header_font_size}px;
+            font-family: 'Comic Sans MS';
+            font-weight: bold;
+            padding: 4px;
+        }}
+    """
+
+
+def build_button_stylesheet(font_size):
+    return f"""
+        QPushButton {{
+            background-color: #222;
+            color: yellow;
+            font-size: {font_size}px;
+            font-family: 'Comic Sans MS';
+            font-weight: bold;
+            border: 2px solid yellow;
+            padding: 6px;
+        }}
+        QPushButton:hover {{
+            background-color: #444;
+        }}
+    """
+
+
+def normalize_header_name(name):
+    return name.strip().lower().replace(" ", "_").replace("#", "number")
+
+
+def apply_column_widths(table, headers, width_map=None):
+    header = table.horizontalHeader()
+    if not headers:
+        return
+
+    if not width_map:
+        header.setSectionResizeMode(QHeaderView.Stretch)
+        return
+
+    normalized_map = {
+        normalize_header_name(key): value for key, value in width_map.items()
+    }
+
+    aliases = {
+        "average_time_(ms)": "avg_time",
+        "average_time": "avg_time",
+        "average_time_ms": "avg_time",
+        "time_(ms)": "time",
+        "time_ms": "time",
+    }
+
+    for index, header_name in enumerate(headers):
+        lookup_name = normalize_header_name(header_name)
+        width = normalized_map.get(lookup_name)
+        if width is None:
+            alias_name = aliases.get(lookup_name)
+            if alias_name is not None:
+                width = normalized_map.get(alias_name)
+        if width is None:
+            width = DEFAULT_COLUMN_WIDTH
+
+        header.setSectionResizeMode(index, QHeaderView.Fixed)
+        table.setColumnWidth(index, width)
+
 ###############################################################
 # FINAL RESULTS DIALOG
 ###############################################################
 class FinalResultsDialog(QDialog):
     def __init__(self):
         super().__init__()
+        final_sizes = TABLE_DIMENSIONS["final_results"]
         self.setWindowTitle("Final Results")
-        self.setGeometry(100, 100, 1600, 900)
+        self.setGeometry(100, 100, final_sizes["dialog_width"], final_sizes["dialog_height"])
         self.showMaximized()
 
         # Background
@@ -42,7 +215,9 @@ class FinalResultsDialog(QDialog):
         
         # Title
         title_label = QLabel("<b>Final Leaders</b>")
-        title_label.setStyleSheet("font-size: 32px; color: yellow; font-family: 'Comic Sans MS'; font-weight: bold; background-color: black; padding: 10px;")
+        title_label.setStyleSheet(
+            f"font-size: {TEXT_SIZES['final_title']}px; color: yellow; font-family: 'Comic Sans MS'; font-weight: bold; background-color: black; padding: 10px;"
+        )
         main_layout.addWidget(title_label, alignment=Qt.AlignHCenter)
 
         # Scroll area for categories
@@ -56,7 +231,9 @@ class FinalResultsDialog(QDialog):
         
         if not final_data or len(final_data) < 2:
             error_label = QLabel("No final results available")
-            error_label.setStyleSheet("font-size: 20px; color: red; font-family: 'Comic Sans MS';")
+            error_label.setStyleSheet(
+                f"font-size: {TEXT_SIZES['error_label']}px; color: red; font-family: 'Comic Sans MS';"
+            )
             scroll_layout.addWidget(error_label)
         else:
             # Parse headers and data
@@ -93,34 +270,23 @@ class FinalResultsDialog(QDialog):
 
                 # Create table
                 table = QTableWidget()
-                table.setFixedWidth(900)
-                table.setFixedHeight(250)
-                table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+                table.setFixedWidth(final_sizes["table_width"])
+                table.setFixedHeight(final_sizes["table_height"])
                 table.verticalHeader().setVisible(False)
+                table.verticalHeader().setDefaultSectionSize(final_sizes["row_height"])
                 table.horizontalHeader().setDefaultAlignment(Qt.AlignHCenter | Qt.AlignVCenter)
-                table.setStyleSheet("""
-                    QTableWidget {
-                        background-color: black !important;
-                        color: yellow;
-                        font-size: 20px;
-                        font-family: 'Comic Sans MS';
-                        font-weight: bold;
-                    }
-                    QHeaderView::section {
-                        background-color: black !important;
-                        color: yellow;
-                        font-size: 18px;
-                        font-family: 'Comic Sans MS';
-                        font-weight: bold;
-                        padding: 4px;
-                        qproperty-alignment: AlignHCenter;
-                    }
-                """)
+                table.setStyleSheet(
+                    build_table_stylesheet(
+                        TEXT_SIZES["final_table"],
+                        TEXT_SIZES["final_header"],
+                    )
+                )
 
                 # Populate table
                 pretty_headers = [h if h in ["Place", "Car #"] else h.replace("_", " ").title().replace("Ms)", "ms)") for h in headers]
                 table.setColumnCount(len(headers))
                 table.setHorizontalHeaderLabels(pretty_headers)
+                apply_column_widths(table, headers, TABLE_COLUMN_WIDTHS["final_results"])
                 table.setRowCount(len(cat_rows))
 
                 for r, row in enumerate(cat_rows):
@@ -135,21 +301,14 @@ class FinalResultsDialog(QDialog):
                 if category in category_gifs:
                     gif_label = QLabel()
                     gif_label.setAlignment(Qt.AlignCenter)
+                    gif_label.setFixedWidth(220)
+                    gif_label.setFixedHeight(138)
+                    gif_label.setScaledContents(True)
                     
                     # Create movie and get its dimensions
                     movie = QMovie(category_gifs[category])
                     movie.setCacheMode(QMovie.CacheAll)
                     movie.setSpeed(100)
-                    
-                    # Get the frame size from the movie
-                    if movie.frameCount() > 0:
-                        frame_size = movie.frameRect().size()
-                        if frame_size.height() > 0:
-                            # Scale to height of 250 while maintaining aspect ratio
-                            scale_factor = 250 / frame_size.height()
-                            scaled_width = int(frame_size.width() * scale_factor)
-                            gif_label.setFixedWidth(scaled_width)
-                            gif_label.setFixedHeight(250)
                     
                     gif_label.setMovie(movie)
                     movie.start()
@@ -170,20 +329,7 @@ class FinalResultsDialog(QDialog):
         close_btn = QPushButton("Close")
         close_btn.setFixedSize(120, 40)
         close_btn.clicked.connect(self.close)
-        close_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #222;
-                color: yellow;
-                font-size: 18px;
-                font-family: 'Comic Sans MS';
-                font-weight: bold;
-                border: 2px solid yellow;
-                padding: 6px;
-            }
-            QPushButton:hover {
-                background-color: #444;
-            }
-        """)
+        close_btn.setStyleSheet(build_button_stylesheet(TEXT_SIZES["button"]))
         
         button_layout = QHBoxLayout()
         button_layout.addStretch()
@@ -210,8 +356,31 @@ class FinalResultsDialog(QDialog):
 class DataPanel(QWidget):
     animation_finished = pyqtSignal()
 
-    def __init__(self, title, bg_image, fixed_height=340):
+    def __init__(
+        self,
+        title,
+        bg_image,
+        fixed_height=340,
+        column_widths=None,
+        table_width=1600,
+        table_height=200,
+        row_height=70,
+        title_font_size=None,
+        table_font_size=None,
+        header_font_size=None,
+        animated_row_font_size=None,
+        cell_alignment=Qt.AlignHCenter | Qt.AlignVCenter,
+        header_alignment=Qt.AlignHCenter | Qt.AlignVCenter,
+    ):
         super().__init__()
+        self.column_widths = column_widths or {}
+        self.animated_row_font_size = animated_row_font_size or TEXT_SIZES["animated_row"]
+        self.cell_alignment = cell_alignment
+        self.header_alignment = header_alignment
+
+        title_font_size = title_font_size or TEXT_SIZES["panel_title"]
+        table_font_size = table_font_size or TEXT_SIZES["panel_table"]
+        header_font_size = header_font_size or TEXT_SIZES["panel_header"]
 
         # Background
         palette = QPalette()
@@ -224,34 +393,19 @@ class DataPanel(QWidget):
 
         # Title
         title_label = QLabel(f"<b>{title}</b>")
-        title_label.setStyleSheet("font-size: 26px; color: yellow; font-family: 'Comic Sans MS';")
+        title_label.setStyleSheet(
+            f"font-size: {title_font_size}px; color: yellow; font-family: 'Comic Sans MS';"
+        )
         layout.addWidget(title_label, alignment=Qt.AlignLeft)
 
         # Table
         self.table = QTableWidget()
-        self.table.setFixedWidth(1200)
-        self.table.setFixedHeight(200)
-        self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        self.table.setFixedWidth(table_width)
+        self.table.setFixedHeight(table_height)
         self.table.verticalHeader().setVisible(False)
-        self.table.horizontalHeader().setDefaultAlignment(Qt.AlignHCenter | Qt.AlignVCenter)
-        self.table.setStyleSheet("""
-            QTableWidget {
-                background-color: black !important;
-                color: yellow;
-                font-size: 22px;
-                font-family: 'Comic Sans MS';
-                font-weight: bold;
-            }
-            QHeaderView::section {
-                background-color: black !important;
-                color: yellow;
-                font-size: 20px;
-                font-family: 'Comic Sans MS';
-                font-weight: bold;
-                padding: 4px;
-                qproperty-alignment: AlignHCenter;
-            }
-        """)
+        self.table.verticalHeader().setDefaultSectionSize(row_height)
+        self.table.horizontalHeader().setDefaultAlignment(self.header_alignment)
+        self.table.setStyleSheet(build_table_stylesheet(table_font_size, header_font_size))
 
         layout.addWidget(self.table, alignment=Qt.AlignHCenter)
         self.setLayout(layout)
@@ -291,11 +445,16 @@ class DataPanel(QWidget):
         container = QWidget()
         container_layout = QHBoxLayout(container)
         container_layout.setContentsMargins(0, 0, 0, 0)
+        container_layout.setSpacing(0)
 
-        for value in row_data:
+        for c, value in enumerate(row_data):
             lbl = QLabel(value)
-            lbl.setStyleSheet("color: yellow; font-size: 22px; font-family: 'Comic Sans MS';")
-            lbl.setAlignment(Qt.AlignHCenter | Qt.AlignVCenter)
+            lbl.setStyleSheet(
+                f"color: yellow; font-size: {self.animated_row_font_size}px; font-family: 'Comic Sans MS';"
+            )
+            lbl.setAlignment(self.cell_alignment)
+            # Match each animated label to the real table column width
+            lbl.setFixedWidth(self.table.columnWidth(c))
             container_layout.addWidget(lbl)
 
         # Attach container to first column and span full width
@@ -339,10 +498,10 @@ class DataPanel(QWidget):
             "car_number": "Car #",
             "name": "Racer Name",
             "lane": "Lane #",
-            "time_ms": "Time (ms)",
+            "time_ms": "Time",
             "category": "Category",
             "heat_number": "Heat #",        
-            "avg_time_ms": "Avg Time (ms)"
+            "avg_time_ms": "Avg Time"
         }
         pretty_headers = [header_map.get(h, h) for h in headers]
 
@@ -350,7 +509,8 @@ class DataPanel(QWidget):
         self.table.clear()
         self.table.setColumnCount(len(headers))
         self.table.setHorizontalHeaderLabels(pretty_headers)
-        self.table.horizontalHeader().setDefaultAlignment(Qt.AlignHCenter | Qt.AlignVCenter)
+        self.table.horizontalHeader().setDefaultAlignment(self.header_alignment)
+        apply_column_widths(self.table, headers, self.column_widths)
         self.table.setRowCount(0)
 
         if not animate:
@@ -359,7 +519,7 @@ class DataPanel(QWidget):
             for r, row in enumerate(rows):
                 for c, value in enumerate(row):
                     item = QTableWidgetItem(value)
-                    item.setTextAlignment(Qt.AlignHCenter | Qt.AlignVCenter)
+                    item.setTextAlignment(self.cell_alignment)
                     self.table.setItem(r, c, item)
 
             return
@@ -400,11 +560,41 @@ class MainDashboard(QWidget):
         top_row = QHBoxLayout()
 
         # Three stacked panels
-        self.heat_panel = DataPanel("----- Heat Results------", "heat_bg.png")
+        heat_sizes = TABLE_DIMENSIONS["heat_results"]
+        leader_sizes = TABLE_DIMENSIONS["leaderboard"]
+        upnext_sizes = TABLE_DIMENSIONS["up_next"]
+
+        self.heat_panel = DataPanel(
+            "_____________________Heat Results________________________",
+            "heat_bg.png",
+            fixed_height=heat_sizes["panel_height"],
+            column_widths=TABLE_COLUMN_WIDTHS["heat_results"],
+            table_width=heat_sizes["table_width"],
+            table_height=heat_sizes["table_height"],
+            row_height=heat_sizes["row_height"],
+        )
         self.setStyleSheet("background-color: black;")
 
-        self.leader_panel = DataPanel("-----Current Leaderboard------", "leaderboard_bg.png")
-        self.upnext_panel = DataPanel("-----Up Next-----", "upnext_bg.png")
+        self.leader_panel = DataPanel(
+            "_____________________Current Leaderboard________________________",
+            "leaderboard_bg.png",
+            fixed_height=leader_sizes["panel_height"],
+            column_widths=TABLE_COLUMN_WIDTHS["leaderboard"],
+            table_width=leader_sizes["table_width"],
+            table_height=leader_sizes["table_height"],
+            row_height=leader_sizes["row_height"],
+        )
+        self.upnext_panel = DataPanel(
+            "________________________Up Next________________________",
+            "upnext_bg.png",
+            fixed_height=upnext_sizes["panel_height"],
+            column_widths=TABLE_COLUMN_WIDTHS["up_next"],
+            table_width=upnext_sizes["table_width"],
+            table_height=upnext_sizes["table_height"],
+            row_height=upnext_sizes["row_height"],
+            cell_alignment=Qt.AlignRight | Qt.AlignVCenter,
+            header_alignment=Qt.AlignRight | Qt.AlignVCenter,
+        )
 
         # Right‑side GIF column
         self.gif_column = QVBoxLayout()
@@ -418,7 +608,7 @@ class MainDashboard(QWidget):
         self.gif_container.setLayout(self.gif_column)
 
 
-        # ---------- TOP GIF (current category) ----------
+        # ________________________________________________ TOP GIF (current category) ________________________________________________
         self.current_gif_label = QLabel()
         self.current_gif_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         self.current_gif_label.setFixedWidth(300)  # adjust as needed
@@ -431,7 +621,7 @@ class MainDashboard(QWidget):
         # Spacer to push bottom GIF down
         self.gif_column.addStretch(2)
 
-        # ---------- BOTTOM GIF (upnext category) ----------
+        # ________________________________________________ BOTTOM GIF (upnext category) ________________________________________________
         self.upnext_gif_label = QLabel()
         self.upnext_gif_label.setAlignment(Qt.AlignRight | Qt.AlignBottom)
         self.upnext_gif_label.setFixedWidth(300)
@@ -464,55 +654,34 @@ class MainDashboard(QWidget):
 
 
         # Buttons at bottom
-        buttons_layout = QHBoxLayout()
+        buttons_layout = QVBoxLayout()
         buttons_layout.addStretch(1)    
 
         #btn_run = QPushButton("Run Timing Program")
         #btn_run.setFixedSize(180, 40)
         #btn_run.clicked.connect(self.run_timing_program)
 
-        btn_results = QPushButton("Show Final Results")
-        btn_results.setFixedSize(180, 40)
+        btn_current = QPushButton("Current")
+        btn_current.setFixedSize(80, 40)
+        btn_current.clicked.connect(self.run_current_animations)
+        btn_current.setStyleSheet(build_button_stylesheet(TEXT_SIZES["button"]))
+
+        btn_results = QPushButton("Results")
+        btn_results.setFixedSize(80, 40)
         btn_results.clicked.connect(self.show_final_results)
-        btn_results.setStyleSheet("""
-            QPushButton {
-                background-color: #222;
-                color: yellow;
-                font-size: 18px;
-                font-family: 'Comic Sans MS';
-                font-weight: bold;
-                border: 2px solid yellow;
-                padding: 6px;
-            }
-            QPushButton:hover {
-                background-color: #444;
-            }
-        """)
+        btn_results.setStyleSheet(build_button_stylesheet(TEXT_SIZES["button"]))
 
         btn_exit = QPushButton("Exit")
-        btn_exit.setFixedSize(120, 40)
+        btn_exit.setFixedSize(80, 40)
         btn_exit.clicked.connect(self.on_exit_button_clicked)
-        btn_exit.setStyleSheet("""
-            QPushButton {
-                background-color: #222;
-                color: yellow;
-                font-size: 18px;
-                font-family: 'Comic Sans MS';
-                font-weight: bold;
-                border: 2px solid yellow;
-                padding: 6px;
-            }
-            QPushButton:hover {
-                background-color: #444;
-            }
-        """)
+        btn_exit.setStyleSheet(build_button_stylesheet(TEXT_SIZES["button"]))
 
 
         #buttons_layout.addWidget(btn_run)
+        buttons_layout.addWidget(btn_current)
         buttons_layout.addWidget(btn_results)
         buttons_layout.addWidget(btn_exit)
-        buttons_layout.setAlignment(Qt.AlignRight)
-        buttons_layout.setAlignment(Qt.AlignBottom)
+        buttons_layout.setAlignment(Qt.AlignRight | Qt.AlignBottom)
 
         main_layout.addLayout(buttons_layout)
         self.setLayout(main_layout)
@@ -524,6 +693,47 @@ class MainDashboard(QWidget):
 
         # Start maximized
         self.showMaximized()
+
+    def run_current_animations(self):
+        try:
+            import AwanaTiming_Clean
+            if hasattr(AwanaTiming_Clean, "simulate_heat_finish"):
+                AwanaTiming_Clean.simulate_heat_finish()
+        except Exception as exc:
+            print(f"Current simulation failed: {exc}")
+
+        heat_data = load_csv("current_heat.csv")
+        upnext_data = load_csv("upnext.csv")
+        if not heat_data or len(heat_data) < 2:
+            return
+
+        self.current_gif_label.clear()
+        self.upnext_gif_label.clear()
+
+        self.heat_panel.update_from_csv("current_heat.csv", animate=True)
+        self.leader_panel.update_from_csv("current_leaderboard.csv", animate=True)
+        if upnext_data and len(upnext_data) > 1:
+            self.upnext_panel.update_from_csv("upnext.csv", animate=True)
+        else:
+            self.upnext_panel.table.setRowCount(0)
+            self.upnext_panel.table.setColumnCount(0)
+
+        last_cat, next_cat = self.get_last_and_next_categories()
+        category_gifs = {
+            "Cubbies": "Cubbies_horizontal_waving.gif",
+            "Sparks": "Sparks_horizontal_waving.gif",
+            "T&T": "TT_horizontal_waving.gif",
+            "Journey": "Journey_horizontal_waving.gif",
+            "Trek": "Trek_horizontal_waving.gif",
+            "GroupB": "group_b_epic_race.gif"
+        }
+
+        if last_cat in category_gifs:
+            self.set_looping_gif(self.current_gif_label, category_gifs[last_cat])
+        if next_cat in category_gifs:
+            self.set_looping_gif(self.upnext_gif_label, category_gifs[next_cat])
+
+        self.last_heat_number = None
     def load_initial_upnext_gif(self):
         upnext = load_csv("upnext.csv")
         if not upnext or len(upnext) < 2:
@@ -568,23 +778,26 @@ class MainDashboard(QWidget):
     def initialize_race_state(self):
         import csv, os
 
-        # ------------------------------------------------------------
+        # ________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________
         # 1. Clear current_heat.csv
-        # ------------------------------------------------------------
+        # ________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________
         with open("current_heat.csv", "w", newline="") as f:
             writer = csv.writer(f)
-            writer.writerow(["Place","Category", "heat_number", "car_number", "name", "lane"])
+            writer.writerow([
+                "Place", "car_number", "name", "lane",
+                "time_ms", "category", "heat_number"
+            ])
 
-        # ------------------------------------------------------------
+        # ________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________
         # 2. Clear current_leaderboard.csv
-        # ------------------------------------------------------------
+        # ________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________
         with open("current_leaderboard.csv", "w", newline="") as f:
             writer = csv.writer(f)
-            writer.writerow(["Place","Category", "car_number", "name", "Average Time (ms)"])
+            writer.writerow(["Place","Category", "car_number", "name", "Avg Time"])
 
-        # ------------------------------------------------------------
+        # ________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________
         # 3. Determine next heat based on heats_results.csv
-        # ------------------------------------------------------------
+        # ________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________
         completed_heats = set()
 
         if os.path.exists("heats_results.csv"):
@@ -593,9 +806,9 @@ class MainDashboard(QWidget):
                 for row in reader:
                     completed_heats.add(int(row["heat_number"]))
 
-        # ------------------------------------------------------------
+        # ________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________
         # 4. Build global heat list
-        # ------------------------------------------------------------
+        # ________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________
         # You already load categories in your race engine, but the UI
         # doesn't have them yet. So we reconstruct them from heats.csv.
         heats = {}
@@ -619,18 +832,18 @@ class MainDashboard(QWidget):
 
         global_heats.sort(key=lambda x: x[1])
 
-        # ------------------------------------------------------------
+        # ________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________
         # 5. Find first uncompleted heat
-        # ------------------------------------------------------------
+        # ________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________
         next_heat = None
         for cat, h in global_heats:
             if h not in completed_heats:
                 next_heat = (cat, h)
                 break
 
-        # ------------------------------------------------------------
+        # ________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________
         # 6. Write upnext.csv
-        # ------------------------------------------------------------
+        # ________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________
         with open("upnext.csv", "w", newline="") as f:
             writer = csv.writer(f)
             writer.writerow(["car_number","name","lane","category", "heat_number"])
@@ -668,9 +881,9 @@ class MainDashboard(QWidget):
 
         import csv, os
 
-        # ------------------------------------------------------------
+        # ________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________
         # Load heats.csv into a dict: heats[(heat_number)] = category
-        # ------------------------------------------------------------
+        # ________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________
         heat_to_category = {}
         if os.path.exists("heats.csv"):
             with open("heats.csv", newline="") as f:
@@ -682,9 +895,9 @@ class MainDashboard(QWidget):
         if not heat_to_category:
             return None, None
 
-        # ------------------------------------------------------------
+        # ________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________
         # Load completed heats from heats_results.csv
-        # ------------------------------------------------------------
+        # ________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________
         completed_heats = set()
         if os.path.exists("heats_results.csv"):
             with open("heats_results.csv", newline="") as f:
@@ -692,15 +905,15 @@ class MainDashboard(QWidget):
                 for row in reader:
                     completed_heats.add(int(row["heat_number"]))
 
-        # ------------------------------------------------------------
+        # ________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________
         # Determine last completed heat
-        # ------------------------------------------------------------
+        # ________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________
         last_completed_heat = max(completed_heats) if completed_heats else None
         last_category = heat_to_category.get(last_completed_heat)
 
-        # ------------------------------------------------------------
+        # ________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________
         # Determine next heat
-        # ------------------------------------------------------------
+        # ________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________
         all_heats_sorted = sorted(heat_to_category.keys())
         next_heat = None
         for h in all_heats_sorted:
@@ -803,9 +1016,56 @@ class MainDashboard(QWidget):
         #    self.upnext_panel.update_from_csv("upnext.csv", animate=False)
 
     ###########################################################
+    # Generate current final results before opening the dialog
+    ###########################################################
+    def generate_final_results_csv(self):
+        category_order = ["Cubbies", "Sparks", "T&T", "Trek", "Journey", "GroupB"]
+        categories = {}
+
+        if os.path.exists("heats.csv"):
+            with open("heats.csv", newline="") as f:
+                reader = csv.DictReader(f)
+                for row in reader:
+                    category = row["category"]
+                    categories.setdefault(category, [])
+                    categories[category].append(row)
+
+        final_rows = [["Place", "Category", "Car Number", "Name", "Average Time (ms)"]]
+
+        for category in category_order:
+            if category not in categories:
+                continue
+
+            results_by_car = {}
+            names = {}
+
+            if os.path.exists("heats_results.csv"):
+                with open("heats_results.csv", newline="") as f:
+                    reader = csv.DictReader(f)
+                    for row in reader:
+                        if row.get("category") == category:
+                            car = row["car_number"]
+                            names[car] = row["name"]
+                            results_by_car.setdefault(car, []).append(float(row["time_ms"]))
+
+            leaders = []
+            for car, times in results_by_car.items():
+                avg = sum(times) / len(times)
+                leaders.append((car, names.get(car, ""), avg))
+
+            leaders.sort(key=lambda x: x[2])
+            for place, (car, name, avg) in enumerate(leaders[:3], start=1):
+                final_rows.append([place, category, car, name, str(round(avg))])
+
+        with open("final_leaders.csv", "w", newline="") as f:
+            writer = csv.writer(f)
+            writer.writerows(final_rows)
+
+    ###########################################################
     # Show final results window
     ###########################################################
     def show_final_results(self):
+        self.generate_final_results_csv()
         dialog = FinalResultsDialog()
         dialog.exec_()
 
