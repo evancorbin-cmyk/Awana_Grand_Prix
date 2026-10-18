@@ -14,7 +14,7 @@ from collections import defaultdict
 # These values control where the source data is loaded from and where the output
 # heat sheet is written.
 ###############################################################
-INPUT_FILE = "Racer List.csv"
+INPUT_FILE = "Racer_List.csv"
 OUTPUT_FILE = "heats.csv"
 LANES_PER_HEAT = 4
 

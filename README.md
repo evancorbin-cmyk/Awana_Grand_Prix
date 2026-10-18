@@ -36,7 +36,7 @@ The Awana Grand Prix Race Control System is designed to manage multiple racing c
 3. Ensure Arduino is connected to the specified COM port (default: COM4)
 4. **Verify COM Port and Baud Rate**:
    - Check which COM port your Arduino is using (Device Manager in Windows)
-   - Open `AwanaTiming_Clean.py` and update these settings:
+   - Open `AwanaTiming_ByClub.py` and update these settings:
      ```python
      COMM_PORT = "COM4"      # Change to your Arduino's COM port
      BAUD_RATE = 9600        # Change if your Arduino uses different baud rate
@@ -47,8 +47,8 @@ The Awana Grand Prix Race Control System is designed to manage multiple racing c
 
 **IMPORTANT**: Before running the race, follow these steps in order:
 
-1. **Create/Update Racer List** - Create or edit a file named exactly `Racer List.csv`:
-   - **IMPORTANT**: File name MUST be exactly `Racer List.csv` (with space and capital letters) or the program won't find it
+1. **Create/Update Racer List** - Create or edit a file named exactly `Racer_List.csv`:
+   - **IMPORTANT**: File name MUST be exactly `Racer_List.csv` or the program won't find it
    - Columns: `Car_Number`, `Name`, `Category` (in this order)
    - One racer per row
    - Example:
@@ -62,13 +62,13 @@ The Awana Grand Prix Race Control System is designed to manage multiple racing c
 
 2. **Generate Heat Schedule** - Run the Heat Generator:
    ```bash
-   python "Heat Generator.py"
+   python "Heat_Generator_ByClub.py"
    ```
    This will create the `heats.csv` file with the race schedule
 
 3. **Start the Race Dashboard** - Run the UI:
    ```bash
-   python RaceUI.py
+   python RaceUI_ByClub.py
    ```
    The dashboard will automatically launch the timing system
 
@@ -85,7 +85,7 @@ The Awana Grand Prix Race Control System is designed to manage multiple racing c
    - **Exit the UI** - Click the Exit button to close the application
    - **Edit heats_results.csv** - Delete the last heat's results (remove all rows for that heat)
    - **Save the file** - Close and save heats_results.csv
-   - **Re-run the UI** - Execute `python RaceUI.py` again
+   - **Re-run the UI** - Execute `python RaceUI_ByClub.py` again
    - The system will resume from the corrected point
 
 2. **Using the Dashboard**:
@@ -97,8 +97,12 @@ The Awana Grand Prix Race Control System is designed to manage multiple racing c
 ## Project Structure
 
 ```
-├── AwanaTiming_Clean.py          # Main race timing engine
-├── RaceUI.py                      # PyQt5 dashboard interface
+├── AwanaTiming_ByClub.py         # Main race timing engine
+├── AwanaTiming_Uncategorized.py  # Exact copy of the timing engine
+├── RaceUI_ByClub.py              # PyQt5 dashboard interface
+├── RaceUI_Uncategorized.py       # Exact copy of the dashboard interface
+├── Heat_Generator_ByClub.py      # Heat schedule generator
+├── Heat_Generator_Uncategorized.py # Exact copy of the heat generator
 ├── AwanaTimingGateArduino.ino     # Arduino sketch for timing gates
 ├── heats.csv                      # Race configuration (categories, heat assignments)
 ├── heats_results.csv              # All completed race results
@@ -159,15 +163,16 @@ When all heats complete:
 4. Plays menu music on loop
 
 ### Sound Effects
-- Menu.mp3 - Background during heat selection
-- RaceStarted.mp3 - Played when heat begins
-- RaceFinished.mp3 - Played when heat completes
-- RaceReset.mp3 - Played when race resets
-- swoosh.wav - Table row animation sound effect
+- audio/Menu.mp3 - Background during heat selection
+- audio/RaceStarted.mp3 - Played when heat begins
+- audio/RaceFinished.mp3 - Played when heat completes
+- audio/RaceReset.mp3 - Played when race resets
+- audio/GetReady.mp3 - Countdown cue used by the timing engine
+- audio/swoosh.wav - Table row animation sound effect
 
 ## Configuration
 
-Key settings in `AwanaTiming_Clean.py`:
+Key settings in `AwanaTiming_ByClub.py`:
 ```python
 COMM_PORT = "COM4"          # Arduino serial port
 BAUD_RATE = 9600            # Serial communication speed
@@ -178,7 +183,7 @@ CSV_RESULTS_FILE = "heats_results.csv"  # Output results file
 ## Troubleshooting
 
 - **Serial Connection Error**: Verify Arduino is connected and COM port matches COMM_PORT setting
-- **Missing GIFs**: Ensure all category GIF files are in the project directory
+- **Missing GIFs**: Ensure all category GIF files are in the images folder
 - **Window Geometry Error**: May occur on small screens; system will auto-adjust table sizes
 
 ## Developer Notes

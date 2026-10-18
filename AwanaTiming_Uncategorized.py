@@ -40,6 +40,13 @@ import pygame
 
 pygame.mixer.init()
 
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+AUDIO_DIR = os.path.join(BASE_DIR, "audio")
+
+
+def audio_path(filename):
+    return os.path.join(AUDIO_DIR, filename)
+
 ###############################################################
 # CONFIGURATION / SETTINGS
 # These values are read once at startup and control how the race engine
@@ -57,19 +64,20 @@ CURRENT_HEAT_FILE = "current_heat.csv"
 CURRENT_LEADERBOARD_FILE = "current_leaderboard.csv"
 UPNEXT_FILE = "upnext.csv"
 FINAL_LEADERS_FILE = "final_leaders.csv"
+EXCLUDED_OVERALL_CATEGORIES = {"GroupB"}
 
 # Sound files used for race-state notifications to keep the event audio cues clear.
-RACERESET_SOUND = "RaceReset.mp3"
-RACEFINISHED_SOUND = "RaceFinished.mp3"
-MENU_SOUND = "Menu.mp3"
-RACESTARTED_SOUND = "RaceStarted.mp3"
+RACERESET_SOUND = audio_path("RaceReset.mp3")
+RACEFINISHED_SOUND = audio_path("RaceFinished.mp3")
+MENU_SOUND = audio_path("Menu.mp3")
+RACESTARTED_SOUND = audio_path("RaceStarted.mp3")
 
 
 ###############################################################
 # INITIALIZE RACE STATE
 # Clears current CSVs and writes the first UpNext heat
 ###############################################################
-def initialize_race_state(categories):
+def initialize_race_state(heats_by_number):
     # Clear current_heat.csv
     with open("current_heat.csv", "w", newline="") as f:
         writer = csv.writer(f)
@@ -94,31 +102,18 @@ def initialize_race_state(categories):
             for row in reader:
                 completed_heats.add(int(row["heat_number"]))
 
-    # Build global ordered heat list
-    global_heats = []
-    for cat, heats in categories.items():
-        for h in sorted(heats.keys()):
-            global_heats.append((cat, h))
-
-    global_heats.sort(key=lambda x: x[1])
-
-    # Find first uncompleted heat
-    next_heat = None
-    for cat, h in global_heats:
-        if h not in completed_heats:
-            next_heat = (cat, h)
-            break
+    next_heat = get_next_heat(heats_by_number, completed_heats=completed_heats)
 
     # Write upnext.csv
     with open("upnext.csv", "w", newline="") as f:
+        if next_heat is None:
+            return  # No heats left; leave the file blank
+
         writer = csv.writer(f)
         writer.writerow(["car_number", "name", "lane", "category", "heat_number"])
 
-        if next_heat is None:
-            return  # No heats left
-
-        cat, h = next_heat
-        heat_data = categories[cat][h]
+        heat_number = next_heat
+        heat_data = heats_by_number[heat_number]
 
         for lane in sorted(heat_data.keys()):
             row = heat_data[lane]
@@ -156,6 +151,81 @@ def load_heats(filename):
     return categories
 
 
+def load_heats_by_number(filename):
+    heats_by_number = defaultdict(dict)
+
+    with open(filename, newline="") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            heat_number = int(row["heat_number"])
+            lane = int(row["lane"])
+
+            heats_by_number[heat_number][lane] = {
+                "category": row["category"],
+                "heat_number": heat_number,
+                "car_number": row["car_number"],
+                "name": row["name"],
+                "lane": lane,
+                "time_ms": None,
+            }
+
+    return heats_by_number
+
+
+def get_heat_roster_from_schedule(heat_number):
+    """Returns the scheduled racers for a given heat directly from heats.csv."""
+    if not os.path.exists(HEATS_FILE):
+        return {}
+
+    heat_roster = {}
+    with open(HEATS_FILE, newline="") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            if int(row["heat_number"]) != heat_number:
+                continue
+            lane = int(row["lane"])
+            heat_roster[lane] = {
+                "category": row["category"],
+                "heat_number": heat_number,
+                "car_number": row["car_number"],
+                "name": row["name"],
+                "lane": lane,
+                "time_ms": None,
+            }
+
+    return heat_roster
+
+
+def get_ordered_heats(heats_by_number):
+    return sorted(heats_by_number.keys())
+
+
+def get_next_heat(heats_by_number, current_heat=None, completed_heats=None):
+    ordered_heats = get_ordered_heats(heats_by_number)
+
+    if not ordered_heats:
+        return None
+
+    if current_heat is not None:
+        try:
+            current_index = ordered_heats.index(current_heat)
+        except ValueError:
+            current_index = None
+
+        if current_index is not None:
+            if current_index + 1 < len(ordered_heats):
+                return ordered_heats[current_index + 1]
+            return None
+
+    if completed_heats is not None:
+        for heat_number in ordered_heats:
+            if heat_number not in completed_heats:
+                return heat_number
+        return None
+
+    return ordered_heats[0]
+
+
 ###############################################################
 # GET LAST COMPLETED HEAT
 ###############################################################
@@ -173,6 +243,15 @@ def get_last_completed_heat():
 # APPEND HEAT RESULTS TO heats_results.csv
 ###############################################################
 def append_heat_results_csv(heat_data):
+    if not heat_data:
+        raise ValueError("No heat results were provided to append.")
+
+    # The race format is fixed to 4 lanes; treat partial heats as invalid input.
+    if len(heat_data) != 4:
+        raise ValueError(
+            f"Expected exactly 4 lane results for a heat, but received {len(heat_data)}."
+        )
+
     file_exists = os.path.exists(CSV_RESULTS_FILE)
 
     with open(CSV_RESULTS_FILE, "a", newline="") as f:
@@ -210,6 +289,7 @@ def write_current_heat_csv(heat_data):
             "time_ms", "category", "heat_number"
         ])
 
+        # Fastest times first so place numbers match race results.
         sorted_rows = sorted(
             heat_data.values(),
             key=lambda r: r["time_ms"]
@@ -228,55 +308,57 @@ def write_current_heat_csv(heat_data):
 
 
 ###############################################################
-# COMPUTE LEADERBOARD FOR A CATEGORY
+# COMPUTE OVERALL LEADERBOARD ACROSS ALL CATEGORIES
 ###############################################################
-def compute_leaderboard(category):
+def compute_overall_leaderboard():
     results = defaultdict(list)
     names = {}
+    categories = {}
 
     try:
         with open(CSV_RESULTS_FILE, newline="") as f:
             reader = csv.DictReader(f)
             for row in reader:
-                if row["category"] == category:
-                    car = row["car_number"]
-                    time_ms = float(row["time_ms"])
-                    results[car].append(time_ms)
-                    names[car] = row["name"]
+                if row["category"] in EXCLUDED_OVERALL_CATEGORIES:
+                    continue
+                car = row["car_number"]
+                time_ms = float(row["time_ms"])
+                results[car].append(time_ms)
+                names[car] = row["name"]
+                categories[car] = row["category"]
     except FileNotFoundError:
         return []
 
     averages = []
     for car, times in results.items():
         avg = sum(times) / len(times)
-        averages.append((car, names[car], avg))
+        averages.append((car, names[car], categories[car], avg))
 
-    averages.sort(key=lambda x: x[2])
+    averages.sort(key=lambda x: x[3])
     return averages[:3]
 
 
 ###############################################################
 # WRITE LEADERBOARD TO current_leaderboard.csv
 ###############################################################
-def write_leaderboard_csv(category):
-    leaders = compute_leaderboard(category)
+def write_leaderboard_csv():
+    leaders = compute_overall_leaderboard()
 
     with open("current_leaderboard.csv", "w", newline="") as f:
         writer = csv.writer(f)
 
         writer.writerow([
-            "Place", "car_number", "name",
-            " ", "avg_time_ms", "category", "  "
+            "Place", "category", "car_number", "name", "lane", "time_ms"
         ])
 
-        for idx, (car, name, avg) in enumerate(leaders, start=1):
+        for idx, (car, name, category, avg) in enumerate(leaders, start=1):
             writer.writerow([
                 idx,
+                category,
                 car,
                 name,
                 "",
-                str(round(avg)),
-                category
+                str(round(avg))
             ])
 
 
@@ -284,10 +366,11 @@ def write_leaderboard_csv(category):
 # WRITE LAST COMPLETED HEAT TO current_heat.csv
 ###############################################################
 def write_last_heat_to_current(last_heat_number):
-    """
-    Reads heats_results.csv and writes the results of the last heat
-    to current_heat.csv for display.
-    """
+    """Builds the current heat display from the scheduled heat roster in heats.csv."""
+    heat_roster = get_heat_roster_from_schedule(last_heat_number)
+    if not heat_roster:
+        return
+
     last_heat_data = []
 
     try:
@@ -302,8 +385,15 @@ def write_last_heat_to_current(last_heat_number):
     if not last_heat_data:
         return
 
-    # Sort by time
-    last_heat_data.sort(key=lambda x: int(x["time_ms"]))
+    # Re-key by lane so we can align results to the scheduled lane order first.
+    result_by_lane = {int(row["lane"]): row for row in last_heat_data}
+    ordered_rows = []
+    for lane in sorted(heat_roster.keys()):
+        row = result_by_lane.get(lane)
+        if row is not None:
+            ordered_rows.append(row)
+
+    ordered_rows.sort(key=lambda x: int(x["time_ms"]))
 
     with open("current_heat.csv", "w", newline="") as f:
         writer = csv.writer(f)
@@ -312,7 +402,7 @@ def write_last_heat_to_current(last_heat_number):
             "time_ms", "category", "heat_number"
         ])
 
-        for idx, row in enumerate(last_heat_data, start=1):
+        for idx, row in enumerate(ordered_rows, start=1):
             writer.writerow([
                 idx,
                 row["car_number"],
@@ -340,15 +430,19 @@ def generate_final_leaders_csv(categories):
             writer.writerow(["Place", "Category", "Car Number", "Name", "Average Time (ms)"])
 
             # Define category order
-            category_order = ["Cubbies", "Sparks", "T&T", "Trek", "Journey", "GroupB"]
+            category_order = ["Cubbies", "Sparks", "T&T", "Trek", "Journey"]
             
             for category in category_order:
                 if category in categories:
-                    leaders = compute_leaderboard(category)
-                    for place, (car, name, avg) in enumerate(leaders, start=1):
+                    leaders = [
+                        (car, name, category_name, avg)
+                        for car, name, category_name, avg in compute_overall_leaderboard()
+                        if category_name == category
+                    ][:3]
+                    for place, (car, name, category_name, avg) in enumerate(leaders, start=1):
                         writer.writerow([
                             place,
-                            category,
+                            category_name,
                             car,
                             name,
                             str(round(avg))
@@ -381,10 +475,12 @@ def simulate_heat_finish():
     if not last_rows:
         return
 
-    current_category = last_rows[0]["category"]
+    heat_roster = get_heat_roster_from_schedule(last_heat)
     saved_heat = {}
     for row in last_rows:
         lane_number = int(row["lane"])
+        if lane_number not in heat_roster:
+            continue
         saved_heat[lane_number] = {
             "category": row["category"],
             "heat_number": int(row["heat_number"]),
@@ -394,42 +490,34 @@ def simulate_heat_finish():
             "time_ms": int(row["time_ms"]),
         }
 
-    write_current_heat_csv(saved_heat)
-    write_leaderboard_csv(current_category)
+    if not saved_heat and heat_roster:
+        saved_heat = heat_roster.copy()
 
-    print(f"Replayed completed heat {last_heat} ({current_category}) for UI animation.")
+    write_current_heat_csv(saved_heat)
+    write_leaderboard_csv()
+
+    print(f"Replayed completed heat {last_heat} for UI animation.")
 
 
 ###############################################################
 # WRITE NEXT HEAT TO upnext.csv
 ###############################################################
-def write_upnext_csv(categories, current_category, current_heat):
-    global_heats = []
-    for cat, heats in categories.items():
-        for h in sorted(heats.keys()):
-            global_heats.append((cat, h))
-
-    global_heats.sort(key=lambda x: x[1])
-
-    try:
-        idx = global_heats.index((current_category, current_heat))
-    except ValueError:
-        return
+def write_upnext_csv(heats_by_number, current_heat):
+    next_heat = get_next_heat(heats_by_number, current_heat)
 
     # Last heat → clear file
-    if idx + 1 >= len(global_heats):
+    if next_heat is None:
         with open("upnext.csv", "w", newline="") as f:
-            writer = csv.writer(f)
-            writer.writerow(["car_number", "name", "lane", "category", "heat_number"])
+            pass
         return
 
-    next_cat, next_heat = global_heats[idx + 1]
-    next_heat_data = categories[next_cat][next_heat]
+    next_heat_data = heats_by_number[next_heat]
 
     with open("upnext.csv", "w", newline="") as f:
         writer = csv.writer(f)
         writer.writerow(["car_number", "name", "lane", "category", "heat_number"])
 
+        # Keep lanes sorted for predictable display and marshal order at the line.
         for lane in sorted(next_heat_data.keys()):
             row = next_heat_data[lane]
             writer.writerow([
@@ -488,28 +576,23 @@ def monitor_serial(port, baud, timeout=0.1):
         print("\n=== Race System Reset — Loading Heats ===")
 
         categories = load_heats(HEATS_FILE)
-        category_list = list(categories.keys())
-        initialize_race_state(categories)
+        heats_by_number = load_heats_by_number(HEATS_FILE)
+        initialize_race_state(heats_by_number)
 
         last_heat = get_last_completed_heat()
         print(f"Last completed heat: {last_heat}")
 
-        all_heats = []
-        for cat in category_list:
-            for h in categories[cat].keys():
-                all_heats.append((cat, h))
-
-        all_heats.sort(key=lambda x: x[1])
-        remaining_heats = [(cat, h) for (cat, h) in all_heats if h > last_heat]
+        all_heats = sorted(heats_by_number.keys())
+        # Resume from disk state: only run heats beyond the highest persisted heat number.
+        remaining_heats = [heat_number for heat_number in all_heats if heat_number > last_heat]
 
 #What to do when all heats are done
         if not remaining_heats:
             print("All heats completed — generating final leaders report.")
             # Write last heat results to current_heat.csv
             write_last_heat_to_current(last_heat)
-            # Update leaderboards for all categories
-            for category in sorted(categories.keys()):
-                write_leaderboard_csv(category)
+            # Update overall leaderboard across all racers while showing category
+            write_leaderboard_csv()
             generate_final_leaders_csv(categories)
             print("All heats are done!")
             pygame.mixer.music.load(MENU_SOUND)
@@ -518,11 +601,11 @@ def monitor_serial(port, baud, timeout=0.1):
                 time.sleep(1)
 
         # Process heats
-        for current_category, current_heat in remaining_heats:
-            heats = categories[current_category]
-            lanes_expected = sorted(heats[current_heat].keys())
-
-            print(f"\n--- Ready for Heat {current_heat} ({current_category}) ---")
+        for current_heat in remaining_heats:
+            heat_rows = heats_by_number[current_heat]
+            lanes_expected = sorted(heat_rows.keys())
+            
+            print(f"\n--- Ready for Heat {current_heat} ---")
             pygame.mixer.music.load(MENU_SOUND)
             pygame.mixer.music.play(loops=-1, fade_ms=2000)
 
@@ -535,6 +618,7 @@ def monitor_serial(port, baud, timeout=0.1):
                 if line:
                     print("Arduino:", line)
 
+                # Do not start recording times until the gate controller starts the race.
                 if line == "Race Started":
                     print(f"--- Heat {current_heat} Started ---")
                     pygame.mixer.music.load(RACESTARTED_SOUND)
@@ -544,6 +628,7 @@ def monitor_serial(port, baud, timeout=0.1):
                     break
 
                 if line == "Race Reset":
+                    pygame.mixer.music.stop()
                     pygame.mixer.music.load(RACERESET_SOUND)
                     pygame.mixer.music.play()
                     time.sleep(2)
@@ -556,6 +641,7 @@ def monitor_serial(port, baud, timeout=0.1):
 
                 if line.startswith("Lane"):
                     try:
+                        # Expected serial format: "Lane <n>: <time_ms> ms"
                         parts = line.split()
                         lane = int(parts[0].replace("Lane", "").replace(":", ""))
                         time_ms = int(parts[2])
@@ -568,7 +654,7 @@ def monitor_serial(port, baud, timeout=0.1):
 
                     except:
                         print("Malformed lane time:", line)
-
+                
                 if len(lane_results) == len(lanes_expected):
                     print(f"--- Heat {current_heat} Complete ---")
                     pygame.mixer.music.load(RACEFINISHED_SOUND)
@@ -579,14 +665,14 @@ def monitor_serial(port, baud, timeout=0.1):
             # Build saved heat
             saved_heat = {}
             for lane in lanes_expected:
-                lane_record = dict(heats[current_heat][lane])
+                lane_record = dict(heat_rows[lane])
                 lane_record["time_ms"] = lane_results[lane]
                 saved_heat[lane] = lane_record
 
             append_heat_results_csv(saved_heat)
             write_current_heat_csv(saved_heat)
-            write_leaderboard_csv(current_category)
-            write_upnext_csv(categories, current_category, current_heat)
+            write_leaderboard_csv()
+            write_upnext_csv(heats_by_number, current_heat)
 
 
 ###############################################################

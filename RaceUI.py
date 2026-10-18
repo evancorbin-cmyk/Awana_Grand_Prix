@@ -19,6 +19,18 @@ from PyQt5.QtGui import QPixmap, QPalette, QBrush, QMovie
 from PyQt5.QtCore import Qt, QTimer, QPropertyAnimation, QPoint, pyqtSignal, QUrl
 from PyQt5.QtMultimedia import QSoundEffect
 
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+IMAGES_DIR = os.path.join(BASE_DIR, "images")
+AUDIO_DIR = os.path.join(BASE_DIR, "audio")
+
+
+def asset_path(folder, filename):
+    candidate = os.path.join(BASE_DIR, folder, filename)
+    if os.path.exists(candidate):
+        return candidate
+    return os.path.join(BASE_DIR, filename)
+
+
 ###############################################################
 # GLOBAL UI SETTINGS
 # These values define dashboard sizing, fonts, layout spacing, and table widths.
@@ -206,7 +218,7 @@ class FinalResultsDialog(QDialog):
 
         # Background
         palette = QPalette()
-        palette.setBrush(QPalette.Window, QBrush(QPixmap("checker_bg.png")))
+        palette.setBrush(QPalette.Window, QBrush(QPixmap(asset_path("images", "checker_bg.png"))))
         self.setPalette(palette)
         self.setAutoFillBackground(True)
 
@@ -306,7 +318,7 @@ class FinalResultsDialog(QDialog):
                     gif_label.setScaledContents(True)
                     
                     # Create movie and get its dimensions
-                    movie = QMovie(category_gifs[category])
+                    movie = QMovie(asset_path("images", category_gifs[category]))
                     movie.setCacheMode(QMovie.CacheAll)
                     movie.setSpeed(100)
                     
@@ -339,7 +351,7 @@ class FinalResultsDialog(QDialog):
         self.setLayout(main_layout)
 
     def resizeEvent(self, event):
-        bg = QPixmap("checker_bg.png")
+        bg = QPixmap(asset_path("images", "checker_bg.png"))
         scaled = bg.scaled(self.size(), Qt.IgnoreAspectRatio, Qt.SmoothTransformation)
 
         palette = self.palette()
@@ -384,7 +396,7 @@ class DataPanel(QWidget):
 
         # Background
         palette = QPalette()
-        palette.setBrush(QPalette.Window, QBrush(QPixmap(bg_image)))
+        palette.setBrush(QPalette.Window, QBrush(QPixmap(asset_path("images", bg_image))))
         self.setPalette(palette)
         self.setAutoFillBackground(True)
 
@@ -423,7 +435,7 @@ class DataPanel(QWidget):
 
         # Swoosh sound (must be WAV)
         self.swoosh = QSoundEffect()
-        self.swoosh.setSource(QUrl.fromLocalFile("swoosh.wav"))
+        self.swoosh.setSource(QUrl.fromLocalFile(asset_path("audio", "swoosh.wav")))
         self.swoosh.setVolume(1.0)  # full volume
 
     ###############################################################
@@ -696,9 +708,9 @@ class MainDashboard(QWidget):
 
     def run_current_animations(self):
         try:
-            import AwanaTiming_Clean
-            if hasattr(AwanaTiming_Clean, "simulate_heat_finish"):
-                AwanaTiming_Clean.simulate_heat_finish()
+            import AwanaTiming_ByClub
+            if hasattr(AwanaTiming_ByClub, "simulate_heat_finish"):
+                AwanaTiming_ByClub.simulate_heat_finish()
         except Exception as exc:
             print(f"Current simulation failed: {exc}")
 
@@ -763,7 +775,7 @@ class MainDashboard(QWidget):
             self.set_looping_gif(self.upnext_gif_label, category_gifs[next_category], which="upnext")
 
     def resizeEvent(self, event):
-        bg = QPixmap("checker_bg.png")
+        bg = QPixmap(asset_path("images", "checker_bg.png"))
         scaled = bg.scaled(self.size(), Qt.IgnoreAspectRatio, Qt.SmoothTransformation)
 
         palette = self.palette()
@@ -931,13 +943,14 @@ class MainDashboard(QWidget):
         label.setScaledContents(True)
         
         # Scale GroupB GIF to fit table dimensions
+        asset_file = asset_path("images", gif_path)
         if "group_b" in gif_path.lower():
-            original = QPixmap(gif_path)
+            original = QPixmap(asset_file)
             scaled_width = int(original.width() * (200 / original.height()))
             label.setFixedWidth(scaled_width)
             label.setFixedHeight(200)
         
-        movie = QMovie(gif_path)
+        movie = QMovie(asset_file)
         movie.setCacheMode(QMovie.CacheAll)
         movie.setSpeed(100)
 
